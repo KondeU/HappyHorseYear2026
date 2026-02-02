@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>欢乐抓马 | 马年大吉</title>
+    
+    <!-- 引入专业的 QR Code 生成库 (CDN) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <style>
+        /* =========================================
+           基础设置 & 马年主题色
+           ========================================= */
+        :root {
+            --bg-color: #2a0a0a;
+            --primary-red: #d92027;
+            --primary-gold: #ffd700;
+            --door-front: #8b0000;
+            --door-back: #1a0505;
+            --text-color: #fff;
+            --font-display: 'Arial Black', sans-serif;
+            --font-body: 'Microsoft YaHei', sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none; /* 防止双击选中文本 */
+            -webkit-tap-highlight-color: transparent; /* 移除移动端点击高亮 */
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: var(--font-body);
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* =========================================
+           动态背景 (红金粒子)
+           ========================================= */
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            opacity: 0.4;
+        }
+
+        /* =========================================
+           游戏主容器
+           ========================================= */
+        .game-wrapper {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* 顶部标题与状态 */
+        .header-ui {
+            position: absolute;
+            top: 2rem;
+            text-align: center;
+            z-index: 10;
+        }
+
+        h1 {
+            font-family: var(--font-display);
+            font-size: clamp(2rem, 5vw, 4rem);
+            color: var(--primary-gold);
+            text-shadow: 0 4px 10px rgba(217, 32, 39, 0.8);
+            margin-bottom: 0.5rem;
+            letter-spacing: 2px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            background: rgba(0,0,0,0.5);
+            padding: 0.5rem 1.5rem;
+            border-radius: 50px;
+            border: 1px solid var(--primary-gold);
+            color: var(--primary-gold);
+            font-weight: bold;
+            font-size: 1.2rem;
+            backdrop-filter: blur(5px);
+        }
+
+        /* =========================================
+           游戏区域 (网格)
+           ========================================= */
+        .grid-container {
+            display: grid;
+            gap: 10px;
+            padding: 20px;
+            transition: all 0.5s ease;
+            width: 90vmin;
+            height: 80vmin;
+            max-width: 600px;
+            max-height: 600px;
+            position: relative; 
+            z-index: 5;
+        }
+
+        /* 3D 门的效果 */
+        .door {
+            background-color: transparent;
+            perspective: 1000px;
+            cursor: pointer;
+            position: relative;
+            border-radius: 8px;
+            touch-action: manipulation; 
+        }
+
+        .door-inner {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            text-align: center;
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+        }
+
+        /* 门被打开时的 class */
+        .door.open .door-inner {
+            transform: rotateY(180deg);
+        }
+        
+        /* 错误时的震动动画 */
+        .door.shake {
+            animation: shake 0.5s;
+        }
+
+        @keyframes shake {
+            0% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            50% { transform: translateX(5px); }
+            75% { transform: translateX(-5px); }
+            100% { transform: translateX(0); }
+        }
+
+        .door-front, .door-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            border: 2px solid #5c0000;
+        }
+
+        /* 门正面 */
+        .door-front {
+            background-color: var(--door-front);
+            color: var(--primary-gold);
+            font-size: 1.5rem;
+            font-weight: bold;
+            background-image: linear-gradient(45deg, #8b0000 25%, #750000 25%, #750000 50%, #8b0000 50%, #8b0000 75%, #750000 75%, #750000 100%);
+            background-size: 20px 20px;
+        }
+        
+        .door-front::after {
+            content: '';
+            width: 12px;
+            height: 12px;
+            background: var(--primary-gold);
+            border-radius: 50%;
+            position: absolute;
+            right: 15%;
+            box-shadow: 0 0 5px var(--primary-gold);
+        }
+
+        /* 门背面 */
+        .door-back {
+            background-color: var(--door-back);
+            transform: rotateY(180deg);
+            border-color: var(--primary-gold);
+            padding: 5px;
+        }
+
+        .horse-img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            filter: drop-shadow(0 0 8px var(--primary-gold));
+            animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes popIn {
+            from { transform: scale(0); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .empty-icon {
+            font-size: 2rem;
+            color: #555;
+        }
+
+        /* =========================================
+           UI Overlay (开始/结束/信息)
+           ========================================= */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: flex; 
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            transition: opacity 0.3s;
+        }
+
+        .overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .btn-start {
+            padding: 1rem 3rem;
+            font-size: 1.5rem;
+            background: var(--primary-red);
+            color: var(--primary-gold);
+            border: 2px solid var(--primary-gold);
+            border-radius: 50px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 0 20px rgba(217, 32, 39, 0.5);
+            transition: transform 0.2s, box-shadow 0.2s;
+            animation: pulse 2s infinite;
+        }
+
+        .btn-start:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 30px rgba(217, 32, 39, 0.8);
+        }
+
+        .game-message {
+            font-size: 2rem;
+            margin-bottom: 1rem; /* 减小间距，留给规则 */
+            text-align: center;
+            color: #fff;
+            line-height: 1.4;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        /* =========================================
+           游戏规则样式 (新增)
+           ========================================= */
+        .game-rules {
+            background: rgba(255,255,255,0.05);
+            padding: 1.5rem 2rem;
+            border-radius: 16px;
+            border: 1px solid rgba(255,215,0,0.2);
+            margin-bottom: 2rem;
+            text-align: center;
+            backdrop-filter: blur(5px);
+            animation: slideUp 0.6s ease-out;
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .rule-item {
+            margin: 8px 0;
+            font-size: 1.1rem;
+            color: #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .rule-num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--primary-gold);
+            color: #2a0a0a;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            font-weight: bold;
+            font-size: 0.9rem;
+            box-shadow: 0 0 5px var(--primary-gold);
+        }
+
+        .rule-highlight {
+            color: var(--primary-gold);
+            font-weight: bold;
+        }
+
+        /* =========================================
+           底部布局 (左下角分数，右下角二维码)
+           ========================================= */
+        .bottom-bar {
+            position: absolute;
+            bottom: 2rem;
+            width: 90%;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            pointer-events: none; 
+            z-index: 10;
+        }
+
+        .stats-panel {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            padding: 1rem;
+            border-radius: 12px;
+            border-left: 4px solid var(--primary-gold);
+            color: #fff;
+            font-family: monospace;
+            font-size: 1.1rem;
+            pointer-events: auto;
+        }
+
+        .stats-panel span {
+            display: block;
+            margin-bottom: 4px;
+        }
+        
+        .stats-label { color: #aaa; font-size: 0.8rem; }
+
+        .qr-panel {
+            background: #fff;
+            padding: 8px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            pointer-events: auto;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            width: 96px;
+        }
+
+        /* 二维码容器样式 */
+        #qrcode {
+            width: 80px;
+            height: 80px;
+            background-color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        /* 隐藏库生成后的 img 标签，因为我们设置了宽高 */
+        #qrcode img {
+            display: block;
+        }
+
+        .qr-text {
+            font-size: 10px;
+            color: #333;
+            margin-top: 4px;
+            font-weight: bold;
+        }
+
+        /* =========================================
+           Toast 弹窗
+           ========================================= */
+        #toast-container {
+            position: fixed;
+            top: 30%; 
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 200;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none; 
+        }
+
+        .toast-message {
+            background: rgba(255, 215, 0, 0.95);
+            color: #8b0000;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 1.2rem;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            opacity: 0;
+            transform: scale(0.8);
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .toast-message.active {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        /* 倒计时条 */
+        .timer-bar-container {
+            position: absolute;
+            top: 18vh;
+            width: 300px;
+            height: 10px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 5px;
+            overflow: hidden;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 20;
+        }
+        
+        .timer-bar {
+            width: 100%;
+            height: 100%;
+            background: var(--primary-gold);
+            transform-origin: left;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- 背景 Canvas -->
+    <div id="canvas-container">
+        <canvas id="bg-canvas"></canvas>
+    </div>
+
+    <div class="game-wrapper">
+        
+        <!-- 头部 UI -->
+        <div class="header-ui">
+            <h1>欢乐抓马</h1>
+            <div class="status-badge" id="level-display">第 1 关</div>
+        </div>
+
+        <!-- 倒计时条 -->
+        <div class="timer-bar-container" id="timer-container">
+            <div class="timer-bar" id="timer-bar"></div>
+        </div>
+
+        <!-- 游戏网格 -->
+        <div class="grid-container" id="grid">
+            <!-- 动态生成的门 -->
+        </div>
+
+        <!-- 底部信息栏 -->
+        <div class="bottom-bar">
+            <div class="stats-panel">
+                <span class="stats-label">当前关卡</span>
+                <span id="ui-level">1</span>
+                <span class="stats-label" style="margin-top:8px">最高纪录</span>
+                <span id="ui-highscore">0</span>
+            </div>
+
+            <div class="qr-panel">
+                <!-- 二维码容器：将由 JS 库生成 -->
+                <div id="qrcode"></div>
+                <div class="qr-text">扫码分享挑战</div>
+            </div>
+        </div>
+
+        <!-- 游戏覆盖层 (开始/结束) -->
+        <div class="overlay" id="overlay">
+            <!-- 主标题 -->
+            <div class="game-message" id="overlay-msg">马年到，好运来！<br>找出所有藏起来的小马</div>
+            
+            <!-- 新增：游戏规则模块 -->
+            <div class="game-rules" id="game-rules">
+                <div class="rule-item"><span class="rule-num">1</span> <span>观察：<span class="rule-highlight">记住开门顺序</span></span></div>
+                <div class="rule-item"><span class="rule-num">2</span> <span>还原：<span class="rule-highlight">依次点击小马</span></span></div>
+                <div class="rule-item"><span class="rule-num">3</span> <span>挑战：<span class="rule-highlight">限时难度递增</span></span></div>
+            </div>
+
+            <button class="btn-start" id="start-btn">开始抓马</button>
+        </div>
+
+        <!-- Toast 容器 -->
+        <div id="toast-container">
+            <div class="toast-message" id="toast-msg"></div>
+        </div>
+
+    </div>
+
+    <script>
+        console.log("Script loaded.");
+
+        /* =========================================
+           二维码生成逻辑 (使用 CDN 库)
+           ========================================= */
+        window.addEventListener('load', function() {
+            // 检查库是否加载成功
+            if (typeof QRCode === 'undefined') {
+                console.error("QRCode library failed to load from CDN.");
+                // 如果库加载失败（离线环境），显示文字提示
+                var qrContainer = document.getElementById("qrcode");
+                qrContainer.innerHTML = "<span style='font-size:8px; text-align:center;'>网络错误<br>无法生成<br>二维码</span>";
+                qrContainer.style.backgroundColor = "#eee";
+                return;
+            }
+
+            var targetUrl = 'https://kondeu.github.io/HappyHorseYear2026/';
+            
+            try {
+                var qrContainer = document.getElementById("qrcode");
+                // 清空容器
+                qrContainer.innerHTML = "";
+                
+                // 调用库生成二维码
+                new QRCode(qrContainer, {
+                    text: targetUrl,
+                    width: 80,
+                    height: 80,
+                    colorDark : "#000000",
+                    colorLight : "#ffffff",
+                    correctLevel : QRCode.CorrectLevel.L
+                });
+                console.log("QR Code generated locally for: " + targetUrl);
+            } catch (e) {
+                console.warn("QR Code generation failed:", e);
+            }
+        });
+
+        /**
+         * 1. Canvas Background (Red/Gold Particles)
+         */
+        var canvas = document.getElementById('bg-canvas');
+        var ctx = canvas.getContext('2d');
+        var width, height;
+        var particles = [];
+        
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        var Particle = function() {
+            this.reset = function() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                this.size = Math.random() * 3 + 1;
+                this.speedX = Math.random() * 1 - 0.5;
+                this.speedY = Math.random() * 1 - 0.5;
+                this.life = Math.random() * 100 + 100;
+                this.color = Math.random() > 0.5 ? 'rgba(217, 32, 39,' : 'rgba(255, 215, 0,'; // Red or Gold
+            };
+            this.update = function() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                this.life--;
+                if (this.life <= 0 || this.x < 0 || this.x > width || this.y < 0 || this.y > height) {
+                    this.reset();
+                }
+            };
+            this.draw = function() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = this.color + (this.life / 200) + ')';
+                ctx.fill();
+            };
+            this.reset();
+        };
+
+        for(var i=0; i<60; i++) {
+            particles.push(new Particle());
+        }
+
+        function animateBg() {
+            ctx.fillStyle = 'rgba(42, 10, 10, 0.1)'; 
+            ctx.fillRect(0, 0, width, height);
+            for(var i=0; i<particles.length; i++) {
+                var p = particles[i];
+                p.update();
+                p.draw();
+            }
+            requestAnimationFrame(animateBg);
+        }
+        animateBg();
+
+
+        /**
+         * 2. 难度配置 (Difficulty Configuration)
+         */
+        var DIFFICULTY_CONFIG = {
+            baseGridSize: 2,
+            maxGridSize: 4, 
+            levelsPerSizeUp: 3,
+            baseSequenceLength: 2,
+            sequenceGrowth: 0.5, 
+            baseSpeed: 1.0,
+            speedDecay: 0.03,
+            minSpeed: 0.4,
+            timePerStep: 1.0, 
+            bufferTime: 2.0,
+            maxTimeLimit: 30
+        };
+
+        /**
+         * 3. 游戏状态管理
+         */
+        var gameState = {
+            level: 1,
+            highScore: 0,
+            r: 2, c: 2,
+            n: 2,
+            s: 1000,
+            d: 5000,
+            sequence: [],
+            playerStep: 0,
+            status: 'IDLE'
+        };
+
+        var dom = {
+            grid: document.getElementById('grid'),
+            levelDisplay: document.getElementById('level-display'),
+            uiLevel: document.getElementById('ui-level'),
+            uiHighScore: document.getElementById('ui-highscore'),
+            overlay: document.getElementById('overlay'),
+            overlayMsg: document.getElementById('overlay-msg'),
+            gameRules: document.getElementById('game-rules'), // 获取规则元素
+            startBtn: document.getElementById('start-btn'),
+            timerContainer: document.getElementById('timer-container'),
+            timerBar: document.getElementById('timer-bar'),
+            toastMsg: document.getElementById('toast-msg')
+        };
+
+        if (!dom.startBtn) {
+            console.error("Critical Error: Start button not found!");
+            alert("游戏加载错误：找不到开始按钮，请检查 HTML 代码。");
+        } else {
+            console.log("DOM elements loaded successfully.");
+        }
+
+        var timerInterval = null;
+
+        try {
+            var savedScore = localStorage.getItem('horseGameHighScore');
+            if(savedScore) gameState.highScore = parseInt(savedScore);
+            console.log("Highscore loaded:", gameState.highScore);
+        } catch (e) {
+            console.warn("LocalStorage disabled or full, highscore will not be saved.", e);
+        }
+        updateStats();
+
+        dom.startBtn.addEventListener('click', function() {
+            console.log("Start button clicked. Status:", gameState.status);
+            if (gameState.status === 'IDLE' || gameState.status === 'GAMEOVER') {
+                if (gameState.status === 'GAMEOVER') {
+                    gameState.level = 1;
+                }
+                startGame();
+            }
+        });
+
+        function updateStats() {
+            dom.uiLevel.textContent = gameState.level;
+            dom.uiHighScore.textContent = gameState.highScore;
+            dom.levelDisplay.textContent = "第 " + gameState.level + " 关";
+        }
+
+        function calculateDifficulty(level) {
+            var cfg = DIFFICULTY_CONFIG;
+
+            // 1. 计算网格大小
+            var sizeIncrement = Math.floor((level - 1) / cfg.levelsPerSizeUp);
+            var gridSize = Math.min(cfg.maxGridSize, cfg.baseGridSize + sizeIncrement);
+            var r = gridSize;
+            var c = gridSize;
+
+            // 2. 计算序列长度
+            var nRaw = cfg.baseSequenceLength + (level * cfg.sequenceGrowth);
+            var n = Math.min(Math.floor(nRaw), Math.floor((r * c) * 0.8));
+            if (n < 2) n = 2;
+
+            // 3. 计算展示速度
+            var sRaw = cfg.baseSpeed - (level * cfg.speedDecay);
+            var s = Math.max(cfg.minSpeed, sRaw); 
+
+            // 4. 计算玩家时间
+            var dRaw = (n * cfg.timePerStep) + cfg.bufferTime;
+            var d = Math.min(cfg.maxTimeLimit, dRaw); 
+
+            console.log("Level " + level + " Difficulty: R" + r + "xC" + c + ", N:" + n + ", S:" + s.toFixed(2) + "s, D:" + d.toFixed(2) + "s");
+            return { r: r, c: c, n: n, s: s, d: d };
+        }
+
+        function startGame() {
+            console.log("Starting game logic...");
+            var params = calculateDifficulty(gameState.level);
+            gameState.r = params.r;
+            gameState.c = params.c;
+            gameState.n = params.n;
+            gameState.s = params.s * 1000;
+            gameState.d = params.d;
+
+            renderGrid(gameState.r, gameState.c);
+
+            gameState.sequence = generateSequence(gameState.n, gameState.r * gameState.c);
+            gameState.playerStep = 0;
+            
+            updateStats();
+            dom.overlay.classList.add('hidden');
+            dom.timerContainer.style.opacity = 0;
+
+            setTimeout(function() {
+                gameState.status = 'DEMO';
+                playDemoSequence();
+            }, 500);
+        }
+
+        function renderGrid(rows, cols) {
+            dom.grid.innerHTML = '';
+            dom.grid.style.gridTemplateColumns = "repeat(" + cols + ", 1fr)";
+            dom.grid.style.gridTemplateRows = "repeat(" + rows + ", 1fr)";
+
+            var horseImgUrl = "https://img.icons8.com/color/96/horse.png";
+
+            for (var i = 0; i < rows * cols; i++) {
+                var door = document.createElement('div');
+                door.className = 'door';
+                door.setAttribute('data-index', i); 
+                
+                door.innerHTML = '<div class="door-inner"><div class="door-front"></div><div class="door-back"><img src="' + horseImgUrl + '" class="horse-img" alt="Horse"></div></div>';
+
+                door.addEventListener('click', function() {
+                    handleDoorClick(this); 
+                });
+
+                dom.grid.appendChild(door);
+            }
+        }
+
+        function generateSequence(count, totalDoors) {
+            var indices = [];
+            for (var i = 0; i < totalDoors; i++) {
+                indices.push(i);
+            }
+            // Fisher-Yates 洗牌算法
+            for (var i = indices.length - 1; i > 0; i--) {
+                var j = Math.floor(Math.random() * (i + 1));
+                var temp = indices[i];
+                indices[i] = indices[j];
+                indices[j] = temp;
+            }
+            return indices.slice(0, count);
+        }
+
+        async function playDemoSequence() {
+            dom.grid.style.pointerEvents = 'none';
+
+            var doors = document.querySelectorAll('.door');
+
+            for (var i = 0; i < gameState.sequence.length; i++) {
+                var doorIndex = gameState.sequence[i];
+                var door = doors[doorIndex];
+                
+                door.classList.add('open');
+                await new Promise(function(resolve) { setTimeout(resolve, gameState.s); });
+                door.classList.remove('open');
+                await new Promise(function(resolve) { setTimeout(resolve, 200); });
+            }
+
+            startPlayerPhase();
+        }
+
+        function startPlayerPhase() {
+            gameState.status = 'PLAYING';
+            dom.grid.style.pointerEvents = 'auto'; 
+            runTimer(gameState.d);
+        }
+
+        function runTimer(seconds) {
+            dom.timerContainer.style.opacity = 1;
+            var timeLeft = seconds;
+            var totalTime = seconds;
+
+            dom.timerBar.style.transform = "scaleX(1)";
+
+            if (timerInterval) clearInterval(timerInterval);
+
+            var intervalStep = 50; 
+
+            timerInterval = setInterval(function() {
+                timeLeft -= (intervalStep / 1000);
+                var pct = Math.max(0, timeLeft / totalTime);
+                dom.timerBar.style.transform = "scaleX(" + pct + ")";
+
+                if (timeLeft <= 0) {
+                    gameOver("时间到！没抓到小马！");
+                }
+            }, intervalStep);
+        }
+
+        function handleDoorClick(doorElement) {
+            if (gameState.status !== 'PLAYING') return;
+
+            var clickedIndex = parseInt(doorElement.getAttribute('data-index'));
+            var expectedIndex = gameState.sequence[gameState.playerStep];
+
+            console.log("Clicked Door Index: " + clickedIndex + " | Expected Index: " + expectedIndex);
+
+            if (clickedIndex === expectedIndex) {
+                doorElement.classList.add('open');
+                gameState.playerStep++;
+
+                if (gameState.playerStep >= gameState.sequence.length) {
+                    levelComplete();
+                }
+            } else {
+                doorElement.classList.add('open');
+                var backContent = doorElement.querySelector('.door-back');
+                backContent.innerHTML = '<div class="empty-icon">❌</div>';
+                doorElement.classList.add('shake');
+                gameOver("哎呀！抓错马了！");
+            }
+        }
+
+        function levelComplete() {
+            clearInterval(timerInterval);
+            gameState.status = 'IDLE';
+            
+            showToast("恭喜！抓马成功！");
+            
+            setTimeout(function() {
+                gameState.level++;
+                if (gameState.level > gameState.highScore) {
+                    gameState.highScore = gameState.level;
+                    try {
+                        localStorage.setItem('horseGameHighScore', gameState.highScore);
+                    } catch (e) {
+                        console.warn("Failed to save highscore.");
+                    }
+                }
+                startGame();
+            }, 1500);
+        }
+
+        function gameOver(reason) {
+            clearInterval(timerInterval);
+            gameState.status = 'GAMEOVER';
+            
+            setTimeout(function() {
+                // 游戏结束时，不需要显示规则，只需要显示原因和重试按钮
+                dom.overlayMsg.innerHTML = reason + '<br><span style="font-size:1rem;color:#aaa">止步于第 ' + gameState.level + ' 关</span>';
+                
+                // 隐藏规则模块，防止游戏结束界面太乱
+                if(dom.gameRules) dom.gameRules.style.display = 'none';
+                
+                dom.startBtn.textContent = "重新挑战";
+                dom.overlay.classList.remove('hidden');
+                dom.timerContainer.style.opacity = 0;
+            }, 1000);
+        }
+        
+        // 覆盖原有的 updateStats 或者在开始游戏前显示规则
+        // 这里为了简单，我们在HTML中默认显示规则，游戏结束隐藏规则，游戏开始（重新开始）时需要确保规则显示出来
+        // 修改 dom.startBtn 点击事件中的逻辑
+        
+        dom.startBtn.onclick = function() {
+             // 如果是重新开始，需要把规则模块显示回来（如果是被隐藏状态的话）
+             if(dom.gameRules) dom.gameRules.style.display = 'block';
+             // 保留原有逻辑
+             if (gameState.status === 'IDLE' || gameState.status === 'GAMEOVER') {
+                if (gameState.status === 'GAMEOVER') {
+                    gameState.level = 1;
+                }
+                startGame();
+            }
+        };
+
+        function showToast(msg) {
+            dom.toastMsg.textContent = msg;
+            dom.toastMsg.classList.add('active');
+            setTimeout(function() {
+                dom.toastMsg.classList.remove('active');
+            }, 2000);
+        }
+
+    </script>
+</body>
+</html>
